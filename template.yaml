@@ -4,16 +4,25 @@ Transform: AWS::Serverless-2016-10-31
 Globals:
   Function:
     Timeout: 30
-    Runtime: python3.9
+    Runtime: python3.12
 
 Resources:
   # 1. DynamoDB Table
   ManageDispatchTable:
-    Type: AWS::Serverless::SimpleTable
+    Type: AWS::DynamoDB::Table
     Properties:
-      PrimaryKey:
-        Name: dispatchId
-        Type: String
+      TableName: ManageDispatchTable
+      AttributeDefinitions:
+        - AttributeName: dispatchId
+          AttributeType: S
+        - AttributeName: teamId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: dispatchId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
       GlobalSecondaryIndexes:
         - IndexName: TeamIdIndex
           KeySchema:
@@ -21,6 +30,9 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
 
   # 2. SQS Queue
   DispatchCommandsQueue:
@@ -38,13 +50,12 @@ Resources:
   RestApiHandlerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/
-      Handler: rest_handler.lambda_handler
+      CodeUri: .
+      Handler: src/rest_handler.lambda_handler
       Environment:
         Variables:
           TABLE_NAME: !Ref ManageDispatchTable
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref ManageDispatchTable }
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
       Events:
         GetDispatches:
           Type: Api
@@ -61,8 +72,8 @@ Resources:
   AsyncWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/
-      Handler: async_worker.lambda_handler
+      CodeUri: .
+      Handler: src/async_worker.lambda_handler
       Environment:
         Variables:
           TABLE_NAME: !Ref ManageDispatchTable
@@ -71,9 +82,7 @@ Resources:
           MOCK_MODE: "True" 
           TEAM_SERVICE_URL: "http://mock-team-service/v1/teams"
           REQUEST_SERVICE_URL: "http://mock-request-service/v1/requests"
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref ManageDispatchTable }
-        - SNSPublishMessagePolicy: { TopicName: !GetAtt DispatchResultsTopic.TopicName }
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
       Events:
         SQSQueueEvent:
           Type: SQS

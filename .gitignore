@@ -1,0 +1,20 @@
+# AWS SAM build artifacts
+.aws-sam/
+
+# Python dependencies & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+.venv
+
+# VS Code settings
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
