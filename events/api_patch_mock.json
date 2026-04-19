@@ -1,0 +1,6 @@
+{
+  "httpMethod": "PATCH",
+  "resource": "/v1/dispatches/{id}/status",
+  "pathParameters": { "id": "DSP-XXXXXX" },
+  "body": "{\"status\": \"ACCEPT\", \"note\": \"ทีมพร้อมออกเดินทาง\"}"
+}

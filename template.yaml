@@ -1,0 +1,82 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.9
+
+Resources:
+  # 1. DynamoDB Table
+  ManageDispatchTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: dispatchId
+        Type: String
+      GlobalSecondaryIndexes:
+        - IndexName: TeamIdIndex
+          KeySchema:
+            - AttributeName: teamId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  # 2. SQS Queue
+  DispatchCommandsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: dispatch-commands-v1
+
+  # 3. SNS Topic
+  DispatchResultsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: request-dispatch-results-v1
+
+  # 4. REST API Lambda (Sync)
+  RestApiHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: rest_handler.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ManageDispatchTable
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref ManageDispatchTable }
+      Events:
+        GetDispatches:
+          Type: Api
+          Properties:
+            Path: /v1/dispatches
+            Method: get
+        UpdateStatus:
+          Type: Api
+          Properties:
+            Path: /v1/dispatches/{id}/status
+            Method: patch
+
+  # 5. Async Worker Lambda (SQS Trigger)
+  AsyncWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: async_worker.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ManageDispatchTable
+          TOPIC_ARN: !Ref DispatchResultsTopic
+          # MOCK_MODE = True จะไม่เรียก API จริง ใช้สำหรับทดสอบคนเดียว
+          MOCK_MODE: "True" 
+          TEAM_SERVICE_URL: "http://mock-team-service/v1/teams"
+          REQUEST_SERVICE_URL: "http://mock-request-service/v1/requests"
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref ManageDispatchTable }
+        - SNSPublishMessagePolicy: { TopicName: !GetAtt DispatchResultsTopic.TopicName }
+      Events:
+        SQSQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt DispatchCommandsQueue.Arn
+            BatchSize: 1

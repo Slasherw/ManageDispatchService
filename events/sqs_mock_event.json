@@ -1,0 +1,8 @@
+{
+  "Records": [
+    {
+      "messageId": "12345-uuid",
+      "body": "{\"requestId\": \"REQ-10293\", \"teamId\": \"TEAM-005\", \"priorityLevel\": 1, \"requestedBy\": \"RequestService\"}"
+    }
+  ]
+}
