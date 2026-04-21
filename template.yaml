@@ -134,3 +134,43 @@ Resources:
           Properties:
             Queue: !GetAtt DispatchCommandsQueue.Arn
             BatchSize: 1
+
+  # 1. สร้าง SQS Queue มารอรับข้อมูลจาก SNS ของเพื่อน
+  RecommendationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: RecommendationQueue
+
+  # (สำหรับอนาคต) เมื่อเพื่อนขอ Account ID ให้ส่งเลข AWS Account ID ของท็อปให้เพื่อน
+  # และเมื่อเพื่อนให้สิทธิ์แล้ว ค่อยเอาโค้ดนี้มาเปิดใช้งานเพื่อผูก SNS ของเพื่อนเข้า SQS ของเรา
+  # RecommendationQueuePolicy:
+  #   Type: AWS::SQS::QueuePolicy
+  #   Properties:
+  #     Queues: [!Ref RecommendationQueue]
+  #     PolicyDocument:
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal: "*"
+  #           Action: sqs:SendMessage
+  #           Resource: !GetAtt RecommendationQueue.Arn
+  #           Condition:
+  #             ArnEquals:
+  #               aws:SourceArn: "arn:aws:sns:us-east-1:337919099389:rescue_recommendation_generated_v1"
+
+  # 2. สร้าง Async Worker (Lambda) สำหรับประมวลผล Recommendation
+  RecommendationWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: recommendation_worker.lambda_handler
+      Runtime: python3.12
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ManageDispatchTable
+      Events:
+        SQSMessage:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt RecommendationQueue.Arn
+            BatchSize: 5
