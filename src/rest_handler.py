@@ -1,10 +1,17 @@
 import json
 import boto3
 import os
+import decimal
 from datetime import datetime, timezone
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ.get('TABLE_NAME', 'ManageDispatchTable'))
+
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, decimal.Decimal):
+            return int(obj) if obj % 1 == 0 else float(obj)
+        return super(DecimalEncoder, self).default(obj)
 
 def get_dashboard_html():
     try:
@@ -64,7 +71,7 @@ def lambda_handler(event, context):
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*" # สำคัญมากเพื่อให้หน้าเว็บดึงข้อมูลได้
                 },
-                "body": json.dumps({"items": items})
+                "body": json.dumps({"items": items}, cls=DecimalEncoder)
             }
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
@@ -76,7 +83,7 @@ def lambda_handler(event, context):
         new_status = body.get('status')
         
         if new_status not in ['ACCEPT', 'DECLINE']:
-            return {"statusCode": 400, "body": json.dumps({"error": {"code": "VALIDATION_ERROR", "message": "invalid status value"}})}
+            return {"statusCode": 400, "body": json.dumps({"error": {"code": "VALIDATION_ERROR", "message": "invalid status value"}}, cls=DecimalEncoder)}
             
         now_time = datetime.now(datetime.time.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         
@@ -94,9 +101,9 @@ def lambda_handler(event, context):
             )
             return {
                 "statusCode": 200,
-                "body": json.dumps({"dispatchId": dispatch_id, "status": new_status, "updatedAt": now_time})
+                "body": json.dumps({"dispatchId": dispatch_id, "status": new_status, "updatedAt": now_time}, cls=DecimalEncoder)
             }
         except Exception as e:
-            return {"statusCode": 409, "body": json.dumps({"error": {"code": "CONFLICT_ERROR", "message": "Dispatch order not found or issue updating"}})}
+            return {"statusCode": 409, "body": json.dumps({"error": {"code": "CONFLICT_ERROR", "message": "Dispatch order not found or issue updating"}}, cls=DecimalEncoder)}
 
     return {"statusCode": 404, "body": "Not Found"}

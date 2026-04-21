@@ -39,6 +39,9 @@ def lambda_handler(event, context):
             'priorityLevel': data_body.get('priorityLevel', 'NORMAL'),
             'location': parse_location(data_body), # ใช้ฟังก์ชันช่วยเพื่อให้โค้ดสะอาด
             'description': data_body.get('description', '-'),
+            'evaluateReason': data_body.get('evaluateReason', '-'), # 👈 ต้องมีตัวนี้
+            'peopleCount': data_body.get('peopleCount', 1),        # 👈 ต้องมีตัวนี้
+            'specialNeeds': data_body.get('specialNeeds', '-'),
             'createdAt': data_body.get('lastEvaluatedAt') or datetime.now(timezone.utc).isoformat(),
             'updatedAt': datetime.now(timezone.utc).isoformat()
         }

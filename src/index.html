@@ -57,19 +57,41 @@
                     <div class="space-y-4">
                         <div><label class="text-xs font-bold text-slate-400 uppercase tracking-widest">สถานที่เกิดเหตุ</label><p class="text-lg font-semibold" id="det-loc"></p></div>
                         <div><label class="text-xs font-bold text-slate-400 uppercase tracking-widest">ผู้แจ้งเหตุ</label><p class="font-medium" id="det-caller"></p></div>
+                        
+                        <div class="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">จำนวนผู้ประสบภัย</label>
+                            <p class="text-xl font-black text-slate-700" id="det-people"></p>
+                        </div>
                     </div>
+                
                     <div class="space-y-4">
                         <div><label class="text-xs font-bold text-slate-400 uppercase tracking-widest">วัน-เวลาที่ได้รับแจ้ง</label><p class="font-medium" id="det-time"></p></div>
+                        
+                        <div class="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                            <label class="text-xs font-bold text-orange-400 uppercase tracking-widest">ความต้องการพิเศษ / อุปกรณ์</label>
+                            <p class="font-bold text-orange-700" id="det-needs"></p>
+                        </div>
+                    
                         <div id="assigned-team-box" class="hidden">
                             <label class="text-xs font-bold text-blue-500 uppercase tracking-widest">ทีมที่รับผิดชอบ</label>
                             <p class="font-black text-blue-700 text-lg" id="det-team-name"></p>
                         </div>
-                    </div>
-                    <div class="col-span-2">
+                </div>
+
+                <div class="col-span-2 space-y-4">
+                    <div>
                         <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">คำอธิบายเหตุการณ์</label>
-                        <div class="mt-2 p-4 bg-slate-50 rounded-xl border border-slate-100 italic text-slate-700" id="det-desc"></div>
+                        <div class="mt-1 p-4 bg-slate-50 rounded-xl border border-slate-100 italic text-slate-700" id="det-desc"></div>
+                    </div>
+
+                    <div class="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                        <label class="text-xs font-bold text-blue-400 uppercase tracking-widest flex items-center gap-1">
+                            🔍 วิเคราะห์โดยระบบประเมินเหตุการณ์
+                        </label>
+                        <p class="mt-1 text-blue-800 font-medium" id="det-reason"></p>
                     </div>
                 </div>
+            </div>
 
                 <div id="action-section" class="border-t border-slate-100 pt-8 mt-4">
                     <div id="form-dispatch" class="hidden">
@@ -101,11 +123,12 @@
         let requests = [];
 
         // เก็บ Mock Teams ไว้ชั่วคราวสำหรับการทดสอบปุ่ม Dispatch (จนกว่า Team Service ของเพื่อนจะเสร็จ)
-        const teams = [
-            { id: 'TEAM-01', name: 'ทีมดับเพลิงรังสิต' },
-            { id: 'TEAM-02', name: 'ทีมแพทย์กู้ชีพ A' },
-            { id: 'TEAM-03', name: 'หน่วยกู้ภัยคลองหลวง' }
-        ];
+        //const teams = [
+        //    { id: 'TEAM-01', name: 'ทีมดับเพลิงรังสิต' },
+        //    { id: 'TEAM-02', name: 'ทีมแพทย์กู้ชีพ A' },
+        //    { id: 'TEAM-03', name: 'หน่วยกู้ภัยคลองหลวง' }
+        //];
+        let teams = [];
 
         let activeTab = 'waiting';
         let selectedReqId = null;
@@ -130,7 +153,10 @@
                     // แปลงเวลาจาก UTC เป็นเวลาไทยให้อ่านง่าย
                     time: item.createdAt ? new Date(item.createdAt).toLocaleTimeString('th-TH') : '-',
                     priority: item.priorityLevel || 'NORMAL',
+                    reason: item.evaluateReason || '-',
                     desc: item.description || '-',
+                    people: item.peopleCount || '1',
+                    needs: item.specialNeeds || '-',
                     teamId: item.teamId !== 'UNASSIGNED' ? item.teamId : null
                 }));
                 
@@ -199,6 +225,10 @@
             document.getElementById('det-caller').innerText = req.caller;
             document.getElementById('det-time').innerText = req.time;
             document.getElementById('det-desc').innerText = req.desc;
+
+            document.getElementById('det-people').innerText = `${req.people} ท่าน`;
+            document.getElementById('det-needs').innerText = req.needs || 'ไม่มีระบุ';
+            document.getElementById('det-reason').innerText = req.reason || 'ไม่มีข้อมูลการประเมิน';
             
             const p = document.getElementById('det-priority');
             p.innerText = req.priority;
@@ -235,14 +265,65 @@
             return 'bg-blue-400 text-white border-blue-500';
         }
 
-        // โหลดข้อมูลทีมใส่ Select
+        async function fetchTeams() {
         const selectTeam = document.getElementById('select-team');
+        selectTeam.innerHTML = '<option value="">กำลังโหลดรายชื่อทีม...</option>';
+
+        try {
+            // 🛡️ Microservices Pattern #1: Timeout 
+            // ป้องกันปัญหาหน้าเว็บเราค้าง ถ้า Service ของเพื่อนช้าหรือโหลดไม่ขึ้น (ตั้งไว้ 5 วินาที)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            // ยิง Request ไปหาเพื่อนพร้อมแนบ Headers ตามที่เพื่อนกำหนด
+            const response = await fetch("https://wvendcmgv2.execute-api.us-east-1.amazonaws.com/v1/teams?status=AVAILABLE", {
+                method: "GET",
+                headers: {
+                    "Authorization": "Bearer mock-dispatcher-token-123",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json"
+                },
+                signal: controller.signal // ผูกกับ Timeout
+            });
+
+            clearTimeout(timeoutId); // เคลียร์ Timeout ทิ้งถ้าโหลดเสร็จก่อน
+
+            if (!response.ok) {
+                throw new Error(`Team Service Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            // นำข้อมูลของเพื่อนมา Map ให้เข้ากับระบบของเรา
+            teams = data.teams.map(t => ({
+                id: t.team_id,
+                // รวมชื่อ ID และ Type เข้าด้วยกันเพื่อให้ Dispatcher อ่านง่าย
+                name: `${t.team_id} (${t.team_type})` 
+            }));
+
+        } catch (error) {
+            console.error("❌ การเชื่อมต่อ Team Service ล้มเหลว:", error);
+
+            // 🛡️ Microservices Pattern #2: Fallback (Graceful Degradation)
+            // ถ้าเพื่อนล่ม หรือ Timeout ให้ใช้ Mock Data ไปก่อน เพื่อให้เรายังกด Dispatch ทำงานต่อได้
+            teams = [
+                { id: 'TEAM-MOCK-1', name: 'ทีมดับเพลิงสำรอง (ระบบ Fallback)' },
+                { id: 'TEAM-MOCK-2', name: 'ทีมกู้ภัยฉุกเฉิน (ระบบ Fallback)' }
+            ];
+
+            // แจ้งเตือนบนหน้าเว็บเบาๆ ว่าตอนนี้ใช้ข้อมูลสำรองอยู่
+            alert("⚠️ ไม่สามารถเชื่อมต่อ Team Service ได้ ระบบกำลังดึงรายชื่อทีมสำรองมาให้ใช้งาน");
+        }
+
+        // 3. วาด Dropdown ใหม่ด้วยข้อมูลที่ได้มา (หรือข้อมูล Fallback)
+        selectTeam.innerHTML = '<option value="">เลือกทีมที่ว่าง...</option>';
         teams.forEach(t => {
             const opt = document.createElement('option');
             opt.value = t.id;
             opt.innerText = t.name;
             selectTeam.appendChild(opt);
         });
+    }   
 
         setInterval(() => {
             document.getElementById('current-time').innerText = new Date().toLocaleTimeString('th-TH');
@@ -251,6 +332,7 @@
         // 🟢 5. สั่งให้ดึงข้อมูลทันทีเมื่อเปิดหน้าเว็บ
         window.onload = () => {
             fetchRequests();
+            fetchTeams();
         };
     </script>
 </body>
