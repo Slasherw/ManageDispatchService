@@ -5,6 +5,15 @@ Globals:
   Function:
     Timeout: 30
     Runtime: python3.12
+  Api:
+    Cors:
+      # อนุญาตให้ Domain อื่นยิงเข้ามาได้
+      AllowOrigin: "'*'"
+      # 🟢 เพิ่ม PATCH ลงในรายการนี้
+      AllowMethods: "'GET,POST,OPTIONS,PATCH'"
+      # อนุญาตให้ส่ง Header เหล่านี้เข้ามาได้ (สำคัญสำหรับ Trace ID และ Content-Type)
+      AllowHeaders: "'Content-Type,X-Trace-Id,X-Amzn-Trace-Id,Authorization'"
+
 
 Resources:
   # 1. DynamoDB Table

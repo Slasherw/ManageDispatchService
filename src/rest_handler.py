@@ -102,12 +102,13 @@ def lambda_handler(event, context):
 
             table.update_item(
                 Key={'dispatchId': dispatch_id},
-                UpdateExpression="set #s = :s, updatedAt = :t, statusNote = :n",
+                UpdateExpression="set #s = :s, updatedAt = :t, statusNote = :n, teamId = :ti",
                 ExpressionAttributeNames={'#s': 'status'},
                 ExpressionAttributeValues={
                     ':s': new_status,
                     ':t': now_time,
-                    ':n': body.get('note', '-')
+                    ':n': body.get('note', '-'),
+                    ':ti': body.get('teamId', 'UNASSIGNED')
                 },
                 ConditionExpression="attribute_exists(dispatchId)"
             )

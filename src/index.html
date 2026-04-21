@@ -288,18 +288,51 @@
             const select = document.getElementById('select-team');
             if(!select.value) return alert('กรุณาเลือกทีม');
 
-            const team = teams.find(t => t.id === select.value);
+            const teamId = select.value;
+            const teamName = select.options[select.selectedIndex].text;
+
+            try {
+                // 🚀 ยิง PATCH API ไปหา Backend
+                const response = await fetch(`${API_URL}/v1/dispatches/${selectedReqId}/status`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'DISPATCHED',
+                        teamId: teamId,
+                        note: `Dispatcher assigned to ${teamName}`
+                    })
+                });
             
-            // TODO: ในอนาคตต้องเปลี่ยนตรงนี้ให้ยิง fetch(PATCH) ไปหา API 
-            // เพื่ออัปเดต DB เป็น DISPATCHED และส่ง SNS ไปหาเพื่อน
-            
-            alert(`จำลองการส่งคำสั่งการไปยัง ${team.name} เรียบร้อยแล้ว (รอยิง API จริง)`);
-            switchTab('dispatched');
+                if (response.ok) {
+                    alert(`✅ ส่งคำสั่งการไปยัง ${teamName} เรียบร้อยแล้ว`);
+                    switchTab('dispatched'); // สลับ Tab และโหลดข้อมูลใหม่จาก DB
+                } else {
+                    throw new Error('Failed to update status');
+                }
+            } catch (error) {
+                console.error("Dispatch Error:", error);
+                alert("❌ ไม่สามารถส่งคำสั่งการได้ กรุณาลองใหม่");
+            }
         }
 
-        function simulateTeamAccept() {
-            alert('ได้รับการยืนยันการรับงานจากทีมเรียบร้อย!');
-            switchTab('accepted');
+        async function simulateTeamAccept() {
+            try {
+                const response = await fetch(`${API_URL}/v1/dispatches/${selectedReqId}/status`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        status: 'ACCEPTED',
+                        note: 'Team has accepted the mission via TeamService'
+                    })
+                });
+            
+                if (response.ok) {
+                    alert('✅ ทีมตอบรับภารกิจเรียบร้อย!');
+                    switchTab('accepted');
+                }
+            } catch (error) {
+                console.error("Accept Error:", error);
+            }
         }
 
         function getPriorityStyle(p) {
