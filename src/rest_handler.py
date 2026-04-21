@@ -2,16 +2,40 @@ import json
 import boto3
 import os
 import decimal
+import uuid
 from datetime import datetime, timezone
+from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ.get('TABLE_NAME', 'ManageDispatchTable'))
 
+# 🟢 1. DecimalEncoder: ตัวแปลงพิเศษสำหรับข้อมูลตัวเลขจาก DynamoDB
 class DecimalEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, decimal.Decimal):
             return int(obj) if obj % 1 == 0 else float(obj)
         return super(DecimalEncoder, self).default(obj)
+    
+# 🟢 2. Helper Function: สำหรับสร้าง Response ที่มีมาตรฐานเดียวกัน (CORS + Trace ID)
+def create_response(status_code, body_data, trace_id):
+    # รวมข้อมูลหลักเข้ากับ Trace ID เพื่อส่งกลับไปให้ Frontend
+    response_body = {
+        **body_data,
+        "traceId": trace_id,
+        "serverTime": datetime.now(timezone.utc).isoformat()
+    }
+    
+    return {
+        "statusCode": status_code,
+        "headers": {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET,PATCH,OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Trace-Id",
+            "X-Trace-Id": trace_id
+        },
+        "body": json.dumps(response_body, cls=DecimalEncoder)
+    }
 
 def get_dashboard_html():
     try:
@@ -23,71 +47,59 @@ def get_dashboard_html():
         return f"<html><body><h1>Error loading dashboard</h1><p>{str(e)}</p></body></html>"
 
 def lambda_handler(event, context):
+    # 🔍 3. Trace ID Management: ดึงจาก Header หรือสร้างใหม่
+    headers = event.get('headers', {})
+    trace_id = headers.get('X-Trace-Id') or headers.get('X-Amzn-Trace-Id') or str(uuid.uuid4())
+    
     method = event.get('httpMethod')
-    path = event.get('path')
-    
-    # 1. หน้า Dashboard (Root Path)
-    if method == 'GET' and (path == '/' or path == ''):
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "text/html",  # สำคัญมาก: ต้องบอกเบราว์เซอร์ว่าเป็น HTML
-                "Access-Control-Allow-Origin": "*" # สำหรับ CORS
-            },
-            "body": get_dashboard_html()
-        }
-    
-    # API Contract #2: Get Dispatches by Team [cite: 88-95]
-    if method == 'GET' and path == '/v1/dispatches':
-        query_params = event.get('queryStringParameters') or {}
-        team_id = query_params.get('teamId')
-        status_filter = query_params.get('status')
-        
-        try:
-            # กรณีที่ 1: ค้นหาตามสถานะ (สำหรับหน้า Dashboard 3 Tab)
-            if status_filter:
-                response = table.query(
-                    IndexName='StatusIndex',
-                    KeyConditionExpression=boto3.dynamodb.conditions.Key('status').eq(status_filter.upper())
-                )
-                items = response.get('Items', [])
-            
-            # กรณีที่ 2: ค้นหาตาม Team ID (สำหรับฝั่งทีมกู้ภัยดูงานตัวเอง)
-            elif team_id:
-                response = table.query(
-                    IndexName='TeamIdIndex',
-                    KeyConditionExpression=boto3.dynamodb.conditions.Key('teamId').eq(team_id)
-                )
-                items = response.get('Items', [])
-            
-            # กรณีที่ 3: ถ้าไม่ส่งอะไรมาเลย ให้ดึงทั้งหมด (Scan) - ระวังเรื่อง performance ถ้าข้อมูลเยอะ
-            else:
-                response = table.scan()
-                items = response.get('Items', [])
-                
+    path = event.get('path', '')
+
+    try:
+        # 🟢 1. ดึงหน้า Dashboard
+        if method == 'GET' and (path == '/' or path == ''):
             return {
                 "statusCode": 200,
                 "headers": {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Origin": "*" # สำคัญมากเพื่อให้หน้าเว็บดึงข้อมูลได้
+                    "Content-Type": "text/html",  # สำคัญ: บอกเบราว์เซอร์ว่านี่คือหน้าเว็บ
+                    "Access-Control-Allow-Origin": "*",
+                    "X-Trace-Id": trace_id
                 },
-                "body": json.dumps({"items": items}, cls=DecimalEncoder)
+                "body": get_dashboard_html()
             }
-        except Exception as e:
-            return {"statusCode": 500, "body": json.dumps({"error": str(e)})}
+        
+        # --- API Contract: Get Dispatches ---
+        elif method == 'GET' and '/v1/dispatches' in path:
+            query_params = event.get('queryStringParameters') or {}
+            status_filter = query_params.get('status')
+            team_id = query_params.get('teamId')
 
-    # API Contract #3: Update Mission Acceptance Status [cite: 128-135]
-    elif method == 'PATCH' and '/status' in path:
-        dispatch_id = event['pathParameters']['id']
-        body = json.loads(event.get('body', '{}'))
-        new_status = body.get('status')
-        
-        if new_status not in ['ACCEPT', 'DECLINE']:
-            return {"statusCode": 400, "body": json.dumps({"error": {"code": "VALIDATION_ERROR", "message": "invalid status value"}}, cls=DecimalEncoder)}
-            
-        now_time = datetime.now(datetime.time.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-        
-        try:
+            if status_filter:
+                response = table.query(
+                    IndexName='StatusIndex',
+                    KeyConditionExpression=Key('status').eq(status_filter.upper())
+                )
+            elif team_id:
+                response = table.query(
+                    IndexName='TeamIdIndex',
+                    KeyConditionExpression=Key('teamId').eq(team_id)
+                )
+            else:
+                response = table.scan(Limit=50) # ป้องกันการดึงข้อมูลเยอะเกินไป (Scan Limit)
+
+            return create_response(200, {"items": response.get('Items', [])}, trace_id)
+
+        # --- API Contract: Update Status (PATCH) ---
+        elif method == 'PATCH' and '/status' in path:
+            # ดึง ID จาก Path Parameters (ตรวจสอบโครงสร้าง event ของ API Gateway)
+            dispatch_id = event.get('pathParameters', {}).get('id')
+            body = json.loads(event.get('body', '{}'))
+            new_status = body.get('status')
+
+            if not new_status or new_status not in ['ACCEPTED', 'DECLINED', 'DISPATCHED']:
+                return create_response(400, {"error": "Invalid status value"}, trace_id)
+
+            now_time = datetime.now(timezone.utc).isoformat()
+
             table.update_item(
                 Key={'dispatchId': dispatch_id},
                 UpdateExpression="set #s = :s, updatedAt = :t, statusNote = :n",
@@ -95,15 +107,25 @@ def lambda_handler(event, context):
                 ExpressionAttributeValues={
                     ':s': new_status,
                     ':t': now_time,
-                    ':n': body.get('note', '')
+                    ':n': body.get('note', '-')
                 },
-                ConditionExpression="attribute_exists(dispatchId)" # ต้องมีงานนี้อยู่จริง
+                ConditionExpression="attribute_exists(dispatchId)"
             )
-            return {
-                "statusCode": 200,
-                "body": json.dumps({"dispatchId": dispatch_id, "status": new_status, "updatedAt": now_time}, cls=DecimalEncoder)
-            }
-        except Exception as e:
-            return {"statusCode": 409, "body": json.dumps({"error": {"code": "CONFLICT_ERROR", "message": "Dispatch order not found or issue updating"}}, cls=DecimalEncoder)}
+            
+            return create_response(200, {
+                "message": "Status updated successfully",
+                "dispatchId": dispatch_id,
+                "status": new_status
+            }, trace_id)
 
-    return {"statusCode": 404, "body": "Not Found"}
+        # --- กรณีไม่พบ Path ที่ต้องการ ---
+        return create_response(404, {"error": "Endpoint not found"}, trace_id)
+
+    except Exception as e:
+        # 🔴 4. Structured Error Logging: พ่น Error พร้อม Trace ID ลง CloudWatch
+        print(f"🔥 [ERROR] TraceID: {trace_id} | Message: {str(e)}")
+        
+        return create_response(500, {
+            "error": "Internal Server Error",
+            "message": "ระบบขัดข้องชั่วคราว กรุณาแจ้ง Trace ID ให้ผู้ดูแลระบบ"
+        }, trace_id)
