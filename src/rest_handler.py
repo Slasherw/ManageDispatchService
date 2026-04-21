@@ -1,31 +1,70 @@
 import json
 import boto3
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ.get('TABLE_NAME', 'ManageDispatchTable'))
 
+def get_dashboard_html():
+    try:
+        # หาตำแหน่งไฟล์ index.html ที่อยู่ในโฟลเดอร์เดียวกัน
+        file_path = os.path.join(os.path.dirname(__file__), 'index.html')
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return f"<html><body><h1>Error loading dashboard</h1><p>{str(e)}</p></body></html>"
+
 def lambda_handler(event, context):
     method = event.get('httpMethod')
-    path = event.get('resource')
+    path = event.get('path')
+    
+    # 1. หน้า Dashboard (Root Path)
+    if method == 'GET' and (path == '/' or path == ''):
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "text/html",  # สำคัญมาก: ต้องบอกเบราว์เซอร์ว่าเป็น HTML
+                "Access-Control-Allow-Origin": "*" # สำหรับ CORS
+            },
+            "body": get_dashboard_html()
+        }
     
     # API Contract #2: Get Dispatches by Team [cite: 88-95]
     if method == 'GET' and path == '/v1/dispatches':
         query_params = event.get('queryStringParameters') or {}
         team_id = query_params.get('teamId')
+        status_filter = query_params.get('status')
         
-        if not team_id:
-            return {"statusCode": 400, "body": json.dumps({"error": {"code": "VALIDATION_ERROR", "message": "teamId required"}})}
-            
         try:
-            response = table.query(
-                IndexName='TeamIdIndex',
-                KeyConditionExpression=boto3.dynamodb.conditions.Key('teamId').eq(team_id)
-            )
+            # กรณีที่ 1: ค้นหาตามสถานะ (สำหรับหน้า Dashboard 3 Tab)
+            if status_filter:
+                response = table.query(
+                    IndexName='StatusIndex',
+                    KeyConditionExpression=boto3.dynamodb.conditions.Key('status').eq(status_filter.upper())
+                )
+                items = response.get('Items', [])
+            
+            # กรณีที่ 2: ค้นหาตาม Team ID (สำหรับฝั่งทีมกู้ภัยดูงานตัวเอง)
+            elif team_id:
+                response = table.query(
+                    IndexName='TeamIdIndex',
+                    KeyConditionExpression=boto3.dynamodb.conditions.Key('teamId').eq(team_id)
+                )
+                items = response.get('Items', [])
+            
+            # กรณีที่ 3: ถ้าไม่ส่งอะไรมาเลย ให้ดึงทั้งหมด (Scan) - ระวังเรื่อง performance ถ้าข้อมูลเยอะ
+            else:
+                response = table.scan()
+                items = response.get('Items', [])
+                
             return {
                 "statusCode": 200,
-                "body": json.dumps({"teamId": team_id, "items": response.get('Items', [])})
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*" # สำคัญมากเพื่อให้หน้าเว็บดึงข้อมูลได้
+                },
+                "body": json.dumps({"items": items})
             }
         except Exception as e:
             return {"statusCode": 500, "body": json.dumps({"error": str(e)})}

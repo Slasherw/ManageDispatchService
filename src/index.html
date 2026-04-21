@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Dispatch Center v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans h-screen flex flex-col overflow-hidden">
+
+    <header class="bg-slate-900 text-white p-4 shadow-md flex justify-between items-center z-10">
+        <h1 class="text-xl font-bold flex items-center gap-2">🚨 ระบบจัดการคำสั่งการกู้ภัย</h1>
+        <div class="flex items-center gap-4">
+            <span class="text-sm opacity-80" id="current-time"></span>
+            <div class="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-bold border border-green-500/30">SERVER: ONLINE</div>
+        </div>
+    </header>
+
+    <main class="flex flex-1 overflow-hidden">
+        
+        <aside class="w-1/2 lg:w-1/3 bg-white border-r border-slate-200 flex flex-col">
+            <div class="flex bg-slate-50 border-b border-slate-200">
+                <button onclick="switchTab('waiting')" id="tab-waiting" class="flex-1 p-3 text-sm font-bold border-b-2 border-blue-600 text-blue-600">
+                    1. รอสั่งการ <span id="count-waiting" class="ml-1 opacity-60"></span>
+                </button>
+                <button onclick="switchTab('dispatched')" id="tab-dispatched" class="flex-1 p-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:bg-slate-100">
+                    2. สั่งการแล้ว <span id="count-dispatched" class="ml-1 opacity-60"></span>
+                </button>
+                <button onclick="switchTab('accepted')" id="tab-accepted" class="flex-1 p-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:bg-slate-100">
+                    3. ตอบรับแล้ว <span id="count-accepted" class="ml-1 opacity-60"></span>
+                </button>
+            </div>
+
+            <div id="request-list" class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/50">
+                </div>
+        </aside>
+
+        <section class="flex-1 bg-white p-8 flex flex-col">
+            <div id="empty-state" class="m-auto text-center text-slate-400">
+                <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                </div>
+                <p class="text-lg font-medium">กรุณาเลือกรายการจากแถบด้านซ้าย</p>
+                <p class="text-sm">เพื่อตรวจสอบรายละเอียดและดำเนินการต่อ</p>
+            </div>
+
+            <div id="detail-view" class="hidden animate-in fade-in duration-300">
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <h2 class="text-3xl font-black text-slate-900" id="det-id">REQ-000</h2>
+                        <p class="text-slate-500" id="det-type"></p>
+                    </div>
+                    <span id="det-priority" class="px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-sm"></span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-8 mb-8">
+                    <div class="space-y-4">
+                        <div><label class="text-xs font-bold text-slate-400 uppercase tracking-widest">สถานที่เกิดเหตุ</label><p class="text-lg font-semibold" id="det-loc"></p></div>
+                        <div><label class="text-xs font-bold text-slate-400 uppercase tracking-widest">ผู้แจ้งเหตุ</label><p class="font-medium" id="det-caller"></p></div>
+                    </div>
+                    <div class="space-y-4">
+                        <div><label class="text-xs font-bold text-slate-400 uppercase tracking-widest">วัน-เวลาที่ได้รับแจ้ง</label><p class="font-medium" id="det-time"></p></div>
+                        <div id="assigned-team-box" class="hidden">
+                            <label class="text-xs font-bold text-blue-500 uppercase tracking-widest">ทีมที่รับผิดชอบ</label>
+                            <p class="font-black text-blue-700 text-lg" id="det-team-name"></p>
+                        </div>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-widest">คำอธิบายเหตุการณ์</label>
+                        <div class="mt-2 p-4 bg-slate-50 rounded-xl border border-slate-100 italic text-slate-700" id="det-desc"></div>
+                    </div>
+                </div>
+
+                <div id="action-section" class="border-t border-slate-100 pt-8 mt-4">
+                    <div id="form-dispatch" class="hidden">
+                        <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
+                            <span class="w-2 h-6 bg-blue-600 rounded-full"></span> มอบหมายทีมกู้ภัย
+                        </h3>
+                        <div class="flex gap-4">
+                            <select id="select-team" class="flex-1 bg-slate-50 border border-slate-200 p-4 rounded-xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                                <option value="">เลือกทีมที่ว่าง...</option>
+                            </select>
+                            <button onclick="handleDispatch()" class="bg-blue-600 text-white px-8 py-4 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95">ส่งคำสั่ง (Dispatch)</button>
+                        </div>
+                    </div>
+
+                    <div id="form-simulate-response" class="hidden text-center p-8 bg-blue-50 rounded-2xl border border-blue-100">
+                        <p class="text-blue-800 font-bold mb-4">กำลังรอการตอบรับจาก Team Service...</p>
+                        <button onclick="simulateTeamAccept()" class="bg-white text-blue-600 border border-blue-200 px-6 py-2 rounded-full text-sm font-bold hover:bg-blue-100">จำลอง: ทีมกดตอบรับภารกิจ (Accept)</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+<script>
+        // 🔴 1. ใส่ URL API Gateway ของคุณที่ได้จากการรัน sam deploy
+        const API_URL = "https://qj7ip5zv5a.execute-api.us-east-1.amazonaws.com/Prod";
+
+        // ลบ Mock Data ทิ้งไป ให้เป็น Array ว่างเพื่อรอรับข้อมูลจริง
+        let requests = [];
+
+        // เก็บ Mock Teams ไว้ชั่วคราวสำหรับการทดสอบปุ่ม Dispatch (จนกว่า Team Service ของเพื่อนจะเสร็จ)
+        const teams = [
+            { id: 'TEAM-01', name: 'ทีมดับเพลิงรังสิต' },
+            { id: 'TEAM-02', name: 'ทีมแพทย์กู้ชีพ A' },
+            { id: 'TEAM-03', name: 'หน่วยกู้ภัยคลองหลวง' }
+        ];
+
+        let activeTab = 'waiting';
+        let selectedReqId = null;
+
+        // 🟢 2. ฟังก์ชันหลักสำหรับดึงข้อมูลจาก API
+        async function fetchRequests() {
+            const container = document.getElementById('request-list');
+            container.innerHTML = '<p class="text-center text-slate-400 mt-10">กำลังโหลดข้อมูล...</p>';
+
+            try {
+                // ยิง API ไปหา Lambda พร้อมแนบ Status ที่กำลังเปิดดูอยู่
+                const response = await fetch(`${API_URL}/v1/dispatches?status=${activeTab.toUpperCase()}`);
+                const data = await response.json();
+                
+                // Map ข้อมูลจาก DB ให้เข้ากับโครงสร้างที่หน้าเว็บต้องการ
+                requests = data.items.map(item => ({
+                    id: item.dispatchId || item.requestId,
+                    status: item.status.toLowerCase(),
+                    type: item.type || 'ทั่วไป',
+                    loc: item.location || 'ไม่ระบุสถานที่',
+                    caller: item.caller || '-',
+                    // แปลงเวลาจาก UTC เป็นเวลาไทยให้อ่านง่าย
+                    time: item.createdAt ? new Date(item.createdAt).toLocaleTimeString('th-TH') : '-',
+                    priority: item.priorityLevel || 'NORMAL',
+                    desc: item.description || '-',
+                    teamId: item.teamId !== 'UNASSIGNED' ? item.teamId : null
+                }));
+                
+                renderList();
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                container.innerHTML = '<p class="text-center text-red-500 mt-10">❌ ไม่สามารถเชื่อมต่อกับ Server ได้</p>';
+            }
+        }
+
+        function switchTab(tab) {
+            activeTab = tab;
+            ['waiting', 'dispatched', 'accepted'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                if(t === tab) {
+                    el.classList.add('border-blue-600', 'text-blue-600');
+                    el.classList.remove('text-slate-500');
+                } else {
+                    el.classList.remove('border-blue-600', 'text-blue-600');
+                    el.classList.add('text-slate-500');
+                }
+            });
+            
+            // 🟢 3. เมื่อกดสลับ Tab ให้ไปดึงข้อมูลใหม่เสมอ
+            fetchRequests();
+            
+            document.getElementById('empty-state').classList.remove('hidden');
+            document.getElementById('detail-view').classList.add('hidden');
+        }
+
+        function renderList() {
+            const container = document.getElementById('request-list');
+            const filtered = requests; // ไม่ต้อง filter แล้ว เพราะ API กรองมาให้แล้ว
+            
+            // อัปเดตตัวเลข (แสดงเฉพาะ Tab ปัจจุบัน)
+            document.getElementById(`count-${activeTab}`).innerText = `(${filtered.length})`;
+
+            container.innerHTML = filtered.length ? '' : '<p class="text-center text-slate-400 mt-10">ไม่มีรายการในหมวดนี้</p>';
+
+            filtered.forEach(req => {
+                const div = document.createElement('div');
+                div.className = `p-4 bg-white rounded-xl border-2 transition-all cursor-pointer hover:shadow-md ${selectedReqId === req.id ? 'border-blue-500 ring-4 ring-blue-50' : 'border-slate-100'}`;
+                div.onclick = () => showDetail(req);
+                
+                div.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="font-black text-slate-900">${req.id}</span>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded border ${getPriorityStyle(req.priority)}">${req.priority}</span>
+                    </div>
+                    <p class="text-sm font-bold text-slate-700">${req.type}</p>
+                    <p class="text-xs text-slate-500 mt-1 flex items-center gap-1">📍 ${req.loc}</p>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function showDetail(req) {
+            selectedReqId = req.id;
+            renderList(); // re-render เพื่อให้ border สีฟ้าติดที่ตัวที่ถูกเลือก
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('detail-view').classList.remove('hidden');
+
+            document.getElementById('det-id').innerText = req.id;
+            document.getElementById('det-type').innerText = req.type;
+            document.getElementById('det-loc').innerText = req.loc;
+            document.getElementById('det-caller').innerText = req.caller;
+            document.getElementById('det-time').innerText = req.time;
+            document.getElementById('det-desc').innerText = req.desc;
+            
+            const p = document.getElementById('det-priority');
+            p.innerText = req.priority;
+            p.className = `px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-sm ${getPriorityStyle(req.priority)}`;
+
+            document.getElementById('form-dispatch').classList.toggle('hidden', req.status !== 'waiting');
+            document.getElementById('form-simulate-response').classList.toggle('hidden', req.status !== 'dispatched');
+            document.getElementById('assigned-team-box').classList.toggle('hidden', !req.teamId);
+            if(req.teamName) document.getElementById('det-team-name').innerText = req.teamName;
+        }
+
+        // 🟢 4. ฟังก์ชัน Dispatch ที่จะพัฒนาต่อยอดไปยิง API (PATCH) ในอนาคต
+        async function handleDispatch() {
+            const select = document.getElementById('select-team');
+            if(!select.value) return alert('กรุณาเลือกทีม');
+
+            const team = teams.find(t => t.id === select.value);
+            
+            // TODO: ในอนาคตต้องเปลี่ยนตรงนี้ให้ยิง fetch(PATCH) ไปหา API 
+            // เพื่ออัปเดต DB เป็น DISPATCHED และส่ง SNS ไปหาเพื่อน
+            
+            alert(`จำลองการส่งคำสั่งการไปยัง ${team.name} เรียบร้อยแล้ว (รอยิง API จริง)`);
+            switchTab('dispatched');
+        }
+
+        function simulateTeamAccept() {
+            alert('ได้รับการยืนยันการรับงานจากทีมเรียบร้อย!');
+            switchTab('accepted');
+        }
+
+        function getPriorityStyle(p) {
+            if(p === 'CRITICAL') return 'bg-red-500 text-white border-red-600';
+            if(p === 'HIGH') return 'bg-orange-400 text-white border-orange-500';
+            return 'bg-blue-400 text-white border-blue-500';
+        }
+
+        // โหลดข้อมูลทีมใส่ Select
+        const selectTeam = document.getElementById('select-team');
+        teams.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.id;
+            opt.innerText = t.name;
+            selectTeam.appendChild(opt);
+        });
+
+        setInterval(() => {
+            document.getElementById('current-time').innerText = new Date().toLocaleTimeString('th-TH');
+        }, 1000);
+
+        // 🟢 5. สั่งให้ดึงข้อมูลทันทีเมื่อเปิดหน้าเว็บ
+        window.onload = () => {
+            fetchRequests();
+        };
+    </script>
+</body>
+</html>

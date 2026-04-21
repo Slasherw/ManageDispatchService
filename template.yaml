@@ -17,6 +17,8 @@ Resources:
           AttributeType: S
         - AttributeName: teamId
           AttributeType: S
+        - AttributeName: status
+          AttributeType: S
       KeySchema:
         - AttributeName: dispatchId
           KeyType: HASH
@@ -33,12 +35,50 @@ Resources:
           ProvisionedThroughput:
             ReadCapacityUnits: 5
             WriteCapacityUnits: 5
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
 
   # 2. SQS Queue
   DispatchCommandsQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: dispatch-commands-v1
+
+  DispatchCommandsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref DispatchCommandsQueue
+      PolicyDocument:
+        Id: "SnsToSqsPolicy"
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "Allow-SNS-SendMessage"
+            Effect: "Allow"
+            Principal:
+              Service: "sns.amazonaws.com"
+            Action: "sqs:SendMessage"
+            Resource: !GetAtt DispatchCommandsQueue.Arn
+            Condition:
+              ArnLike:
+                aws:SourceArn: "arn:aws:sns:us-east-1:955468203539:rescue-prioritization-events-v1"
+
+  # ส่วนสำหรับเชื่อมต่อ (Subscribe) SQS ของเราเข้ากับ SNS ของเพื่อน
+  RescuePrioritizationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: sqs
+      Endpoint: !GetAtt DispatchCommandsQueue.Arn
+      TopicArn: "arn:aws:sns:us-east-1:955468203539:rescue-prioritization-events-v1"
+      # แนะนำให้เปิด RawMessageDelivery เป็น true เพื่อให้รับ JSON ได้ง่ายขึ้น
+      RawMessageDelivery: true
 
   # 3. SNS Topic
   DispatchResultsTopic:
@@ -57,6 +97,11 @@ Resources:
           TABLE_NAME: !Ref ManageDispatchTable
       Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
       Events:
+        GetDashboard:
+          Type: Api
+          Properties:
+            Path: /
+            Method: get
         GetDispatches:
           Type: Api
           Properties:
