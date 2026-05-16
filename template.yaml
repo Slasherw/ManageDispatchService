@@ -54,12 +54,6 @@ Resources:
             ReadCapacityUnits: 5
             WriteCapacityUnits: 5
 
-  # 3. SNS Topic (ขาออกของเรา)
-  DispatchResultsTopic:
-    Type: AWS::SNS::Topic
-    Properties:
-      TopicName: request-dispatch-results-v1
-
   # 4. REST API Lambda (Sync)
   RestApiHandlerFunction:
     Type: AWS::Serverless::Function
