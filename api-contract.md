@@ -127,6 +127,7 @@ The service uses standard HTTP status codes and a consistent error response body
 The Manage Dispatch Service publishes events to Amazon SNS when specific actions occur. Consumers (like the **MissionProgress Service**) should subscribe to the following topic.
 
 ### Topic: `rescue.mission.dispatch.v1`
+*   **Topic ARN:** `arn:aws:sns:us-east-1:460581038623:request-dispatch-v1`
 *   **Event Name:** `DispatchOrderCreated`
 *   **Trigger:** When a dispatcher successfully assigns a team to a request.
 *   **SNS Message Attributes:**
