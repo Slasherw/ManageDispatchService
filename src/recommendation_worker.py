@@ -9,6 +9,7 @@ dynamodb = boto3.resource('dynamodb')
 TABLE_NAME = os.environ.get('TABLE_NAME', 'ManageDispatchTable')
 table = dynamodb.Table(TABLE_NAME)
 TEAM_SERVICE_URL = os.environ.get('TEAM_SERVICE_URL')
+REQUEST_SERVICE_URL = os.environ.get('REQUEST_SERVICE_URL')
 
 def fetch_all_teams(trace_id):
     if not TEAM_SERVICE_URL:
@@ -21,7 +22,8 @@ def fetch_all_teams(trace_id):
         }
         response = requests.get(TEAM_SERVICE_URL, headers=headers, timeout=5)
         if response.status_code == 200:
-            data = response.json()
+            # ใช้ decimal.Decimal แทน float เพื่อป้องกัน Error ใน DynamoDB
+            data = json.loads(response.text, parse_float=decimal.Decimal)
             # รองรับทั้งแบบ { teams: [] } และ []
             raw_teams = data if isinstance(data, list) else (data.get('teams') or data.get('items') or [])
             # สร้าง Lookup Map: { team_id: team_full_details }
@@ -30,6 +32,24 @@ def fetch_all_teams(trace_id):
     except Exception as e:
         print(f"❌ Failed to fetch all teams: {str(e)}")
     return {}
+
+def update_request_status(request_id, action, trace_id, payload=None):
+    if not REQUEST_SERVICE_URL or not request_id:
+        return
+    
+    # action should be 'triage', 'assign', 'resolve', 'cancel', etc.
+    url = f"{REQUEST_SERVICE_URL}/rescue-requests/{request_id}/{action}"
+    
+    try:
+        headers = {
+            "Content-Type": "application/json",
+            "X-Trace-Id": trace_id
+        }
+        # Synchronous call as per architecture principles
+        response = requests.post(url, json=payload or {}, headers=headers, timeout=5)
+        print(f"📡 Request Service Status Update ({request_id} -> {action}): {response.status_code}")
+    except Exception as e:
+        print(f"❌ Failed to update Request Service status: {str(e)}")
 
 def lambda_handler(event, context):
     for record in event['Records']:
@@ -106,6 +126,9 @@ def lambda_handler(event, context):
             try:
                 table.put_item(Item=item)
                 print(f"✅ [SUCCESS] TraceID: {trace_id} | Created Enriched Dispatch Record: {request_id}")
+                
+                # 🟢 Update Request Service Status: TRIAGED
+                update_request_status(request_id, 'triage', trace_id)
             except Exception as db_err:
                 print(f"🔥 [ERROR] TraceID: {trace_id} | DynamoDB Put Failed: {str(db_err)}")
 

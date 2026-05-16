@@ -26,8 +26,8 @@
                 <button onclick="switchTab('dispatched')" id="tab-dispatched" class="flex-1 p-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:bg-slate-100">
                     2. สั่งการแล้ว <span id="count-dispatched" class="ml-1 opacity-60"></span>
                 </button>
-                <button onclick="switchTab('accepted')" id="tab-accepted" class="flex-1 p-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:bg-slate-100">
-                    3. ตอบรับแล้ว <span id="count-accepted" class="ml-1 opacity-60"></span>
+                <button onclick="switchTab('resolved')" id="tab-resolved" class="flex-1 p-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:bg-slate-100">
+                    3. สำเร็จภารกิจ <span id="count-resolved" class="ml-1 opacity-60"></span>
                 </button>
             </div>
 
@@ -122,8 +122,8 @@
                     </div>
 
                     <div id="form-simulate-response" class="hidden text-center p-8 bg-blue-50 rounded-2xl border border-blue-100">
-                        <p class="text-blue-800 font-bold mb-4">กำลังรอการตอบรับจาก Team Service...</p>
-                        <button onclick="simulateTeamAccept()" class="bg-white text-blue-600 border border-blue-200 px-6 py-2 rounded-full text-sm font-bold hover:bg-blue-100">จำลอง: ทีมกดตอบรับภารกิจ (Accept)</button>
+                        <p class="text-blue-800 font-bold mb-4">กำลังรอการสิ้นสุดภารกิจจาก Team Service...</p>
+                        <button onclick="handleResolveMission()" class="bg-white text-blue-600 border border-blue-200 px-6 py-2 rounded-full text-sm font-bold hover:bg-blue-100">จำลอง: สิ้นสุดภารกิจ (End Mission)</button>
                     </div>
                 </div>
             </div>
@@ -187,7 +187,7 @@
 
         function switchTab(tab) {
             activeTab = tab;
-            ['waiting', 'dispatched', 'accepted'].forEach(t => {
+            ['waiting', 'dispatched', 'resolved'].forEach(t => {
                 const el = document.getElementById(`tab-${t}`);
                 if(t === tab) {
                     el.classList.add('border-blue-600', 'text-blue-600');
@@ -348,23 +348,23 @@
             }
         }
 
-        async function simulateTeamAccept() {
+        async function handleResolveMission() {
             try {
                 const response = await fetch(`${API_URL}/v1/dispatches/${selectedReqId}/status`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        status: 'ACCEPTED',
-                        note: 'Team has accepted the mission via TeamService'
+                        status: 'RESOLVED',
+                        note: 'Mission ended via simulator'
                     })
                 });
             
                 if (response.ok) {
-                    alert('✅ ทีมตอบรับภารกิจเรียบร้อย!');
-                    switchTab('accepted');
+                    alert('✅ ปิดภารกิจเรียบร้อย!');
+                    switchTab('resolved');
                 }
             } catch (error) {
-                console.error("Accept Error:", error);
+                console.error("Resolve Error:", error);
             }
         }
 

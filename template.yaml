@@ -71,6 +71,7 @@ Resources:
           TABLE_NAME: !Ref ManageDispatchTable
           DISPATCH_TOPIC_ARN: !Ref RescueMissionDispatchedTopic
           TEAM_SERVICE_URL: "https://uuh5csx5hg.execute-api.ap-southeast-1.amazonaws.com/v1/teams"
+          REQUEST_SERVICE_URL: "https://xiotbtkj2m.execute-api.ap-southeast-2.amazonaws.com/dev/v1"
       Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
       Policies:
         - SNSPublishMessagePolicy:
@@ -133,6 +134,7 @@ Resources:
         Variables:
           TABLE_NAME: !Ref ManageDispatchTable
           TEAM_SERVICE_URL: "https://uuh5csx5hg.execute-api.ap-southeast-1.amazonaws.com/v1/teams"
+          REQUEST_SERVICE_URL: "https://xiotbtkj2m.execute-api.ap-southeast-2.amazonaws.com/dev/v1"
       Events:
         SQSMessage:
           Type: SQS
