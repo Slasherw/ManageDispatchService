@@ -54,42 +54,7 @@ Resources:
             ReadCapacityUnits: 5
             WriteCapacityUnits: 5
 
-  # 2. SQS Queue
-  DispatchCommandsQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: dispatch-commands-v1
-
-  DispatchCommandsQueuePolicy:
-    Type: AWS::SQS::QueuePolicy
-    Properties:
-      Queues:
-        - !Ref DispatchCommandsQueue
-      PolicyDocument:
-        Id: "SnsToSqsPolicy"
-        Version: "2012-10-17"
-        Statement:
-          - Sid: "Allow-SNS-SendMessage"
-            Effect: "Allow"
-            Principal:
-              Service: "sns.amazonaws.com"
-            Action: "sqs:SendMessage"
-            Resource: !GetAtt DispatchCommandsQueue.Arn
-            Condition:
-              ArnLike:
-                aws:SourceArn: "arn:aws:sns:us-east-1:955468203539:rescue-prioritization-events-v1"
-
-  # ส่วนสำหรับเชื่อมต่อ (Subscribe) SQS ของเราเข้ากับ SNS ของเพื่อน
-  RescuePrioritizationSubscription:
-    Type: AWS::SNS::Subscription
-    Properties:
-      Protocol: sqs
-      Endpoint: !GetAtt DispatchCommandsQueue.Arn
-      TopicArn: "arn:aws:sns:us-east-1:955468203539:rescue-prioritization-events-v1"
-      # แนะนำให้เปิด RawMessageDelivery เป็น true เพื่อให้รับ JSON ได้ง่ายขึ้น
-      RawMessageDelivery: true
-
-  # 3. SNS Topic
+  # 3. SNS Topic (ขาออกของเรา)
   DispatchResultsTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -104,7 +69,12 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref ManageDispatchTable
+          DISPATCH_TOPIC_ARN: !Ref RescueMissionDispatchedTopic
+          TEAM_SERVICE_URL: "https://uuh5csx5hg.execute-api.ap-southeast-1.amazonaws.com/v1/teams"
       Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Policies:
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt RescueMissionDispatchedTopic.TopicName
       Events:
         GetDashboard:
           Type: Api
@@ -122,64 +92,103 @@ Resources:
             Path: /v1/dispatches/{id}/status
             Method: patch
 
-  # 5. Async Worker Lambda (SQS Trigger)
-  AsyncWorkerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: .
-      Handler: src/async_worker.lambda_handler
-      Environment:
-        Variables:
-          TABLE_NAME: !Ref ManageDispatchTable
-          TOPIC_ARN: !Ref DispatchResultsTopic
-          # MOCK_MODE = True จะไม่เรียก API จริง ใช้สำหรับทดสอบคนเดียว
-          MOCK_MODE: "True" 
-          TEAM_SERVICE_URL: "http://mock-team-service/v1/teams"
-          REQUEST_SERVICE_URL: "http://mock-request-service/v1/requests"
-      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
-      Events:
-        SQSQueueEvent:
-          Type: SQS
-          Properties:
-            Queue: !GetAtt DispatchCommandsQueue.Arn
-            BatchSize: 1
-
-  # 1. สร้าง SQS Queue มารอรับข้อมูลจาก SNS ของเพื่อน
+  # 1. สร้าง SQS Queue มารอรับข้อมูลจาก SNS ของเพื่อน (Team Service - Recommendation)
   RecommendationQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: RecommendationQueue
 
-  # (สำหรับอนาคต) เมื่อเพื่อนขอ Account ID ให้ส่งเลข AWS Account ID ของท็อปให้เพื่อน
-  # และเมื่อเพื่อนให้สิทธิ์แล้ว ค่อยเอาโค้ดนี้มาเปิดใช้งานเพื่อผูก SNS ของเพื่อนเข้า SQS ของเรา
-  # RecommendationQueuePolicy:
-  #   Type: AWS::SQS::QueuePolicy
-  #   Properties:
-  #     Queues: [!Ref RecommendationQueue]
-  #     PolicyDocument:
-  #       Statement:
-  #         - Effect: Allow
-  #           Principal: "*"
-  #           Action: sqs:SendMessage
-  #           Resource: !GetAtt RecommendationQueue.Arn
-  #           Condition:
-  #             ArnEquals:
-  #               aws:SourceArn: "arn:aws:sns:us-east-1:337919099389:rescue_recommendation_generated_v1"
+  RecommendationQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref RecommendationQueue]
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: sqs:SendMessage
+            Resource: !GetAtt RecommendationQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: "arn:aws:sns:us-east-1:337919099389:rescue_recommendation_generated_v1"
+  
+  # การเชื่อมต่อ SQS ของเราเข้ากับ SNS ของเพื่อน
+  TeamServiceSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: "arn:aws:sns:us-east-1:337919099389:rescue_recommendation_generated_v1"
+      Endpoint: !GetAtt RecommendationQueue.Arn
+      Protocol: sqs
+      RawMessageDelivery: false
 
-  # 2. สร้าง Async Worker (Lambda) สำหรับประมวลผล Recommendation
+  # 2. Recommendation Worker (ตอนนี้เป็นทางเข้าหลักทางเดียวแล้ว)
   RecommendationWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: src/
-      Handler: recommendation_worker.lambda_handler
+      CodeUri: .
+      Handler: src/recommendation_worker.lambda_handler
       Runtime: python3.12
       Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/LabRole"
       Environment:
         Variables:
           TABLE_NAME: !Ref ManageDispatchTable
+          TEAM_SERVICE_URL: "https://uuh5csx5hg.execute-api.ap-southeast-1.amazonaws.com/v1/teams"
       Events:
         SQSMessage:
           Type: SQS
           Properties:
             Queue: !GetAtt RecommendationQueue.Arn
             BatchSize: 5
+  
+  # 1. สร้าง SNS Topic ของเราเอง (ที่เราเป็นคน Publish)
+  RescueMissionDispatchedTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: request-dispatch-v1
+
+  # 🟢 เพิ่มส่วนนี้เพื่อเปิดสิทธิ์ให้เพื่อน (Account 337919099389) มา Subscribe ได้
+  RescueMissionDispatchedTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref RescueMissionDispatchedTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCrossAccountSubscribe
+            Effect: Allow
+            Principal:
+              # ระบุ Account ID ของเพื่อน
+              AWS: "arn:aws:iam::337919099389:root"
+            Action:
+              - "sns:Subscribe"
+              - "sns:Receive"
+            Resource: !Ref RescueMissionDispatchedTopic
+
+  # 2. สร้าง SQS สำหรับ Debug (เอาไว้เช็คของ)
+  DebugTeamServiceQueue:
+    Type: AWS::SQS::Queue
+
+  # 3. ผูก SQS เข้ากับ SNS
+  DebugSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref RescueMissionDispatchedTopic
+      Endpoint: !GetAtt DebugTeamServiceQueue.Arn
+      Protocol: sqs
+
+  DebugTeamServiceQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref DebugTeamServiceQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "sns.amazonaws.com" # 🟢 อนุญาตให้บริการ SNS ส่งของได้
+            Action: "sqs:SendMessage"
+            Resource: !GetAtt DebugTeamServiceQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref RescueMissionDispatchedTopic # 🟢 เฉพาะจาก Topic นี้เท่านั้น
