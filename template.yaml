@@ -105,13 +105,13 @@ Resources:
             Resource: !GetAtt RecommendationQueue.Arn
             Condition:
               ArnEquals:
-                aws:SourceArn: "arn:aws:sns:us-east-1:337919099389:rescue_recommendation_generated_v1"
+                aws:SourceArn: "arn:aws:sns:ap-southeast-1:157975549839:recommendation-generated-topic"
   
   # การเชื่อมต่อ SQS ของเราเข้ากับ SNS ของเพื่อน
   TeamServiceSubscription:
     Type: AWS::SNS::Subscription
     Properties:
-      TopicArn: "arn:aws:sns:us-east-1:337919099389:rescue_recommendation_generated_v1"
+      TopicArn: "arn:aws:sns:ap-southeast-1:157975549839:recommendation-generated-topic"
       Endpoint: !GetAtt RecommendationQueue.Arn
       Protocol: sqs
       RawMessageDelivery: false
@@ -156,12 +156,71 @@ Resources:
             Principal:
               # ระบุ Account ID ของเพื่อน
               AWS: 
-                - "arn:aws:iam::337919099389:root"
-                - "arn:aws:iam::879830645391:root"
+                - "arn:aws:iam::337919099389:root" # Team
+                - "arn:aws:iam::340217571399:root" # MissionProgress
             Action:
               - "sns:Subscribe"
               - "sns:Receive"
             Resource: !Ref RescueMissionDispatchedTopic
+
+  # --- 5. Mission Progress Integration (Async Update) ---
+
+  # 1. SQS สำหรับรับข้อมูลอัปเดตจาก Mission Progress (EventBridge)
+  MissionUpdateQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: MissionUpdateQueue
+
+  # 2. Policy ให้ EventBridge ส่งข้อความเข้า SQS ได้
+  MissionUpdateQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref MissionUpdateQueue]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt MissionUpdateQueue.Arn
+
+  # 3. EventBridge Rule: ดักจับ MissionStatusChanged (RESOLVED only)
+  MissionStatusResolvedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Route MissionStatusChanged (RESOLVED) events to MissionUpdateQueue"
+      EventBusName: "mission-progress-events" # ใช้ Custom Bus ตามที่ระบุ
+      EventPattern:
+        source:
+          - "mission.progress" # ตัวอย่าง source (ปรับได้ตามจริง)
+        detail-type:
+          - "MissionStatusChanged"
+        detail:
+          new_status:
+            - "RESOLVED"
+      Targets:
+        - Arn: !GetAtt MissionUpdateQueue.Arn
+          Id: "MissionUpdateQueueTarget"
+
+  # 4. Mission Update Worker (Consumer)
+  MissionUpdateWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/mission_update_worker.lambda_handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ManageDispatchTable
+          TEAM_SERVICE_URL: "https://uuh5csx5hg.execute-api.ap-southeast-1.amazonaws.com/v1/teams"
+          REQUEST_SERVICE_URL: "https://xiotbtkj2m.execute-api.ap-southeast-2.amazonaws.com/dev/v1"
+      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Events:
+        SQSMessage:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt MissionUpdateQueue.Arn
+            BatchSize: 1
 
   # 2. สร้าง SQS สำหรับ Debug (เอาไว้เช็คของ)
   DebugTeamServiceQueue:
