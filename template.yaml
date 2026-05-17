@@ -155,7 +155,9 @@ Resources:
             Effect: Allow
             Principal:
               # ระบุ Account ID ของเพื่อน
-              AWS: "arn:aws:iam::337919099389:root"
+              AWS: 
+                - "arn:aws:iam::337919099389:root"
+                - "arn:aws:iam::879830645391:root"
             Action:
               - "sns:Subscribe"
               - "sns:Receive"
