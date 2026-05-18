@@ -78,7 +78,7 @@ def update_team_status(team_id, status, dispatch_id, trace_id):
         "dispatchedAt": datetime.now(timezone.utc).isoformat(),
         "team_status": status
     }
-    
+    print(payload)
     try:
         headers = {
             "Content-Type": "application/json",
@@ -275,6 +275,7 @@ def lambda_handler(event, context):
                     }
                 }
 
+                print(f"📤 Sending to SNS (MissionProgress): {json.dumps(event_payload, indent=2,cls=DecimalEncoder)}")
                 sns_response = sns.publish(
                     TopicArn=DISPATCH_TOPIC_ARN,
                     Message=json.dumps(event_payload, cls=DecimalEncoder),
@@ -282,6 +283,7 @@ def lambda_handler(event, context):
                         'messageType': {'DataType': 'String', 'StringValue': 'DispatchOrderCreated'}
                     }
                 )
+                print(event_payload)
                 print(f"📡 SNS Published (DispatchOrderCreated): {sns_response['MessageId']}")
     
             return create_response(200, {

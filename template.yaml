@@ -104,18 +104,9 @@ Resources:
             Action: sqs:SendMessage
             Resource: !GetAtt RecommendationQueue.Arn
             Condition:
-              ArnEquals:
+              ArnLike:
                 aws:SourceArn: "arn:aws:sns:ap-southeast-1:157975549839:recommendation-generated-topic"
   
-  # การเชื่อมต่อ SQS ของเราเข้ากับ SNS ของเพื่อน
-  TeamServiceSubscription:
-    Type: AWS::SNS::Subscription
-    Properties:
-      TopicArn: "arn:aws:sns:ap-southeast-1:157975549839:recommendation-generated-topic"
-      Endpoint: !GetAtt RecommendationQueue.Arn
-      Protocol: sqs
-      RawMessageDelivery: false
-
   # 2. Recommendation Worker (ตอนนี้เป็นทางเข้าหลักทางเดียวแล้ว)
   RecommendationWorkerFunction:
     Type: AWS::Serverless::Function
@@ -171,7 +162,7 @@ Resources:
     Properties:
       QueueName: MissionUpdateQueue
 
-  # 2. Policy ให้ EventBridge ส่งข้อความเข้า SQS ได้
+  # 2. Policy ให้ EventBridge ส่งข้อความเข้า SQS ได้ และอนุญาตสิทธิ์เพิ่มเติมให้เพื่อน
   MissionUpdateQueuePolicy:
     Type: AWS::SQS::QueuePolicy
     Properties:
@@ -184,24 +175,14 @@ Resources:
               Service: events.amazonaws.com
             Action: sqs:SendMessage
             Resource: !GetAtt MissionUpdateQueue.Arn
-
-  # 3. EventBridge Rule: ดักจับ MissionStatusChanged (RESOLVED only)
-  MissionStatusResolvedRule:
-    Type: AWS::Events::Rule
-    Properties:
-      Description: "Route MissionStatusChanged (RESOLVED) events to MissionUpdateQueue"
-      EventBusName: "mission-progress-events" # ใช้ Custom Bus ตามที่ระบุ
-      EventPattern:
-        source:
-          - "mission.progress" # ตัวอย่าง source (ปรับได้ตามจริง)
-        detail-type:
-          - "MissionStatusChanged"
-        detail:
-          new_status:
-            - "RESOLVED"
-      Targets:
-        - Arn: !GetAtt MissionUpdateQueue.Arn
-          Id: "MissionUpdateQueueTarget"
+          - Effect: Allow
+            Principal:
+              AWS: "arn:aws:iam::340217571399:role/LabRole"
+            Action:
+              - "sqs:ReceiveMessage"
+              - "sqs:DeleteMessage"
+              - "sqs:GetQueueAttributes"
+            Resource: !GetAtt MissionUpdateQueue.Arn
 
   # 4. Mission Update Worker (Consumer)
   MissionUpdateWorkerFunction:

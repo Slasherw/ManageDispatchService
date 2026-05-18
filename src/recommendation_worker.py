@@ -52,6 +52,7 @@ def update_request_status(request_id, action, trace_id, payload=None):
         print(f"❌ Failed to update Request Service status: {str(e)}")
 
 def lambda_handler(event, context):
+    print(event)
     for record in event['Records']:
         message_id = record.get('messageId', 'unknown-msg-id')
         try:
@@ -122,7 +123,7 @@ def lambda_handler(event, context):
                 'updatedAt': now_time,
                 'traceId': trace_id
             }
-
+            print(item)
             try:
                 table.put_item(Item=item)
                 print(f"✅ [SUCCESS] TraceID: {trace_id} | Created Enriched Dispatch Record: {request_id}")
